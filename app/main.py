@@ -8,6 +8,7 @@ Run with:
 from fastapi import FastAPI
 
 from app.routes.auth_routes import router as auth_router
+from app.routes.strava_routes import router as strava_router
 
 app = FastAPI(
     title="Fitness Agent",
@@ -17,6 +18,7 @@ app = FastAPI(
 
 # Register routes
 app.include_router(auth_router)
+app.include_router(strava_router)
 
 
 @app.get("/")
