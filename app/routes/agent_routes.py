@@ -1,7 +1,7 @@
 """
 Agent routes — chat with your AI training coach.
 
-POST /agent/chat  →  send a message, get a coached response
+POST /agent/chat  →  send a message with conversation history, get a coached response
 """
 
 from fastapi import APIRouter, HTTPException
@@ -12,15 +12,25 @@ from app.agent import run_agent
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 
+class Message(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+
 class ChatRequest(BaseModel):
     message: str
+    history: list[Message] = []
 
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"message": "How was my training this week?"},
-                {"message": "Should I rest today or can I do a long ride?"},
-                {"message": "Compare my last 7 days vs the 7 days before that"},
+                {
+                    "message": "Tell me more about that ride",
+                    "history": [
+                        {"role": "user", "content": "How was my training this week?"},
+                        {"role": "assistant", "content": "You did 3 rides totaling 120km..."},
+                    ],
+                }
             ]
         }
     }
@@ -34,12 +44,12 @@ class ChatResponse(BaseModel):
 async def chat(request: ChatRequest):
     """
     Chat with your AI training coach.
-
-    The agent will automatically pull your Strava data as needed
-    to answer your question.
+    Send conversation history for multi-turn context.
     """
     try:
-        answer = await run_agent(request.message)
+        # Convert history to the format OpenAI expects
+        history = [{"role": m.role, "content": m.content} for m in request.history]
+        answer = await run_agent(request.message, conversation_history=history)
         return ChatResponse(response=answer)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

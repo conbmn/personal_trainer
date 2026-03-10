@@ -428,7 +428,7 @@
                 </svg>
             </button>
         </div>
-        <div class="input-hint">Powered by your Strava data + OpenAI</div>
+        <div class="input-hint">Powered by Strava + Whoop + OpenAI</div>
     </div>
 
     <script>
@@ -439,6 +439,7 @@
         const welcomeState = document.getElementById('welcomeState');
 
         let isLoading = false;
+        let conversationHistory = [];
 
         function sendSuggestion(chip) {
             messageInput.value = chip.textContent;
@@ -465,7 +466,10 @@
                 const res = await fetch(`${API_BASE}/agent/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text }),
+                    body: JSON.stringify({
+                        message: text,
+                        history: conversationHistory,
+                    }),
                 });
 
                 const data = await res.json();
@@ -475,6 +479,14 @@
 
                 if (res.ok) {
                     addMessage(data.response, 'agent');
+                    // Store both messages in history
+                    conversationHistory.push({ role: 'user', content: text });
+                    conversationHistory.push({ role: 'assistant', content: data.response });
+
+                    // Keep last 20 messages to avoid token limits
+                    if (conversationHistory.length > 20) {
+                        conversationHistory = conversationHistory.slice(-20);
+                    }
                 } else {
                     addMessage(`Error: ${data.detail || 'Something went wrong'}`, 'agent');
                 }
@@ -529,10 +541,17 @@
         // Check connection status on load
         async function checkStatus() {
             try {
-                const res = await fetch(`${API_BASE}/auth/strava/status`);
+                const res = await fetch(`${API_BASE}/auth/status`);
                 const data = await res.json();
                 const badge = document.getElementById('statusBadge');
-                if (!data.authenticated) {
+                const strava = data.strava?.authenticated;
+                const whoop = data.whoop?.authenticated;
+
+                if (strava && whoop) {
+                    badge.innerHTML = `<div class="status-dot"></div><span>Strava + Whoop</span>`;
+                } else if (strava) {
+                    badge.innerHTML = `<div class="status-dot"></div><span>Strava Only</span>`;
+                } else {
                     badge.innerHTML = `<div class="status-dot" style="background:#ef4444;animation:none"></div><span>Not Connected</span>`;
                     badge.style.borderColor = 'rgba(239,68,68,0.2)';
                     badge.style.background = 'rgba(239,68,68,0.1)';
