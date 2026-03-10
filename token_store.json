@@ -1,7 +1,12 @@
 {
   "strava": {
-    "access_token": "eb196f8171c14c64bee76352c89fcdb963103e59",
+    "access_token": "e207fee6c774fd835f2657cc496f679c0649971f",
     "refresh_token": "e652085a77779271720eabfbbbed74711606ef2c",
-    "expires_at": 1772332758
+    "expires_at": 1772813302
+  },
+  "whoop": {
+    "access_token": "kY66a4-MnYLTIXYkpP5pSjus7Zb_q7OTlS5NNXFaYEA.w6pqheOtIT-iJHM9wc4U9Lo86GSnzJq5l5LQO7Li6_M",
+    "refresh_token": "Y_r8omyoWprDFTs6zgWD5RuBAzJOLBl1qRqsguWyy3M.rz7dFFbEvsd7uOQ4dWL8MdnVLNNYmjVOEsAYDi3ryAI",
+    "expires_at": 1772795302
   }
 }

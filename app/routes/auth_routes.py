@@ -11,7 +11,7 @@ Endpoints:
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
-from app.auth import get_authorize_url, exchange_code_for_tokens, get_valid_access_token
+from app.auth import get_authorize_url, exchange_code_for_tokens, get_valid_access_token, validate_state
 from app.token_store import get_tokens, delete_tokens
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -41,7 +41,12 @@ async def login(provider: str):
 # ---------------------------------------------------------------------------
 
 @router.get("/{provider}/callback")
-async def callback(provider: str, code: str | None = None, error: str | None = None):
+async def callback(
+    provider: str,
+    code: str | None = None,
+    error: str | None = None,
+    state: str | None = None,
+):
     """
     OAuth callback endpoint.
     The provider redirects here after the user authorizes (or denies).
@@ -53,6 +58,10 @@ async def callback(provider: str, code: str | None = None, error: str | None = N
 
     if not code:
         raise HTTPException(status_code=400, detail="No authorization code received")
+
+    # Validate state for providers that use it (Whoop)
+    if not validate_state(state):
+        raise HTTPException(status_code=400, detail="Invalid state parameter")
 
     try:
         token_data = await exchange_code_for_tokens(provider, code)

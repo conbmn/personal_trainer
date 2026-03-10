@@ -7,10 +7,16 @@ Handles:
   - Refreshing expired tokens
 """
 
+import secrets
+from urllib.parse import urlencode
+
 import httpx
 
 from app.config import settings
 from app.token_store import save_tokens, get_tokens, is_token_expired
+
+# Simple in-memory state storage (fine for single-user personal app)
+_pending_states: set[str] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -24,7 +30,6 @@ PROVIDERS = {
         "auth_url": settings.strava_auth_url,
         "token_url": settings.strava_token_url,
         "scopes": settings.strava_scopes,
-        "scope_separator": ",",
     },
     "whoop": {
         "client_id": lambda: settings.whoop_client_id,
@@ -32,7 +37,6 @@ PROVIDERS = {
         "auth_url": settings.whoop_auth_url,
         "token_url": settings.whoop_token_url,
         "scopes": settings.whoop_scopes,
-        "scope_separator": " ",
     },
 }
 
@@ -40,12 +44,6 @@ PROVIDERS = {
 def get_authorize_url(provider: str) -> str:
     """
     Build the URL to redirect the user to for OAuth authorization.
-    
-    Example flow:
-      1. User hits /auth/strava/login
-      2. We redirect them to this URL
-      3. They log in on Strava/Whoop and click "Authorize"
-      4. Provider redirects back to our /auth/{provider}/callback
     """
     cfg = PROVIDERS[provider]
     redirect_uri = f"{settings.app_base_url}/auth/{provider}/callback"
@@ -57,8 +55,23 @@ def get_authorize_url(provider: str) -> str:
         "scope": cfg["scopes"],
     }
 
-    query = "&".join(f"{k}={v}" for k, v in params.items())
-    return f"{cfg['auth_url']}?{query}"
+    # Whoop requires a state parameter (exactly 8 chars)
+    if provider == "whoop":
+        state = secrets.token_hex(4)  # 8 hex chars
+        params["state"] = state
+        _pending_states.add(state)
+
+    return f"{cfg['auth_url']}?{urlencode(params)}"
+
+
+def validate_state(state: str | None) -> bool:
+    """Check and consume a state parameter."""
+    if state is None:
+        return True  # Strava doesn't use state
+    if state in _pending_states:
+        _pending_states.discard(state)
+        return True
+    return False
 
 
 async def exchange_code_for_tokens(provider: str, code: str) -> dict:

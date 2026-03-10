@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     whoop_client_secret: str = ""
     whoop_auth_url: str = "https://api.prod.whoop.com/oauth/oauth2/auth"
     whoop_token_url: str = "https://api.prod.whoop.com/oauth/oauth2/token"
-    whoop_scopes: str = "read:recovery read:sleep read:workout read:profile read:body_measurement"
+    whoop_scopes: str = "offline read:recovery read:sleep read:workout read:profile read:body_measurement"
 
     # App
     app_base_url: str = "http://localhost:8000"
