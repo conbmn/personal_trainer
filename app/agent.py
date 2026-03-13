@@ -12,12 +12,16 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app.clients import strava
 from app.clients import whoop
+from app.training_plan import gather_fitness_snapshot, build_plan_prompt, get_weeks_until_race, RACE_CONFIG
 
 client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-SYSTEM_PROMPT = """You are a knowledgeable cycling and triathlon coach assistant.
+SYSTEM_PROMPT = f"""You are a knowledgeable cycling and triathlon coach assistant.
 You have access to the user's Strava training data AND Whoop recovery/sleep data.
 Use the available tools to pull real data before answering questions.
+
+The athlete is training for {RACE_CONFIG['race_name']} on {RACE_CONFIG['race_date']} ({get_weeks_until_race()} weeks away).
+It's a 70.3: 1.9km swim, 90km bike, 21.1km run. Goal is to finish comfortably.
 
 Guidelines:
 - Always fetch data before making training recommendations — never guess.
@@ -28,6 +32,7 @@ Guidelines:
 - Be concise but insightful — like a good coach talking to an athlete.
 - Whoop recovery zones: Red (<34) = take it easy, Yellow (34-66) = moderate OK, Green (67+) = go hard.
 - If you notice patterns (e.g., declining HRV, poor sleep streak, overtraining), flag them.
+- When asked about training plans, use the training plan tools to generate data-driven plans.
 """
 
 # ---------------------------------------------------------------------------
@@ -162,6 +167,32 @@ TOOLS = [
             },
         },
     },
+    # --- Training plan tools ---
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_training_plan",
+            "description": (
+                "Generate a full periodized training plan for the athlete's Ironman 70.3. "
+                "Pulls real Strava and Whoop data to base the plan on current fitness. "
+                "Use when the athlete asks for a training plan, program, or schedule."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "plan_type": {
+                        "type": "string",
+                        "enum": ["full", "next_week", "adjust"],
+                        "description": (
+                            "'full' = complete periodized plan until race day. "
+                            "'next_week' = detailed plan for next week only. "
+                            "'adjust' = suggestions to adjust current training."
+                        ),
+                    }
+                },
+            },
+        },
+    },
 ]
 
 # ---------------------------------------------------------------------------
@@ -192,6 +223,13 @@ async def execute_tool(name: str, arguments: dict) -> str:
             result = await whoop.get_sleep(days=arguments.get("days", 7))
         elif name == "get_whoop_workouts":
             result = await whoop.get_workouts(days=arguments.get("days", 7))
+        # Training plan tools
+        elif name == "generate_training_plan":
+            plan_type = arguments.get("plan_type", "full")
+            snapshot = await gather_fitness_snapshot()
+            prompt = build_plan_prompt(snapshot, plan_type=plan_type)
+            # Return the prompt as the "data" — the LLM will use it to generate the plan
+            result = {"plan_prompt": prompt, "weeks_until_race": get_weeks_until_race()}
         else:
             result = {"error": f"Unknown tool: {name}"}
     except Exception as e:
