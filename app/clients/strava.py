@@ -104,8 +104,46 @@ async def get_training_summary(days: int = 7) -> dict:
     """
     Build a training summary for the LLM agent to reason about.
     Returns structured data about recent training load.
+    Enriches avg_hr with Whoop workout data where Strava HR is missing.
     """
-    activities = await get_all_activities(days=days)
+    import asyncio
+    from app.clients import whoop as _whoop
+
+    activities, whoop_workouts_raw = await asyncio.gather(
+        get_all_activities(days=days),
+        _whoop.get_workouts(days=days),
+    )
+
+    # Build Whoop HR lookup: list of (start_ts, avg_hr, duration_sec)
+    _whoop_workouts: list[tuple[float, float, float]] = []
+    for w in (whoop_workouts_raw or []):
+        if w.get("score_state") != "SCORED" or not w.get("score"):
+            continue
+        avg_hr_w = w["score"].get("average_heart_rate")
+        start_str = w.get("start", "")
+        end_str = w.get("end", "")
+        if not avg_hr_w or not start_str:
+            continue
+        try:
+            from datetime import datetime as _dt
+            start_ts = _dt.fromisoformat(start_str.replace("Z", "+00:00")).timestamp()
+            end_ts = _dt.fromisoformat(end_str.replace("Z", "+00:00")).timestamp() if end_str else start_ts
+            _whoop_workouts.append((start_ts, float(avg_hr_w), end_ts - start_ts))
+        except Exception:
+            continue
+
+    def _find_whoop_hr(start_date_utc: str, duration_sec: float) -> float | None:
+        try:
+            from datetime import datetime as _dt
+            strava_ts = _dt.fromisoformat(start_date_utc.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return None
+        strava_end = strava_ts + duration_sec
+        for w_start, w_hr, w_dur in _whoop_workouts:
+            overlap = min(strava_end, w_start + w_dur) - max(strava_ts, w_start)
+            if overlap > 300:
+                return w_hr
+        return None
 
     rides = [a for a in activities if a.get("type") in ("Ride", "VirtualRide")]
     runs = [a for a in activities if a.get("type") in ("Run", "VirtualRun")]
@@ -141,9 +179,10 @@ async def get_training_summary(days: int = 7) -> dict:
                 "distance_km": round(a["distance"] / 1000, 1),
                 "moving_time_min": round(a["moving_time"] / 60),
                 "elevation_m": round(a.get("total_elevation_gain", 0)),
-                "avg_hr": a.get("average_heartrate"),
+                "avg_hr": a.get("average_heartrate") or _find_whoop_hr(a.get("start_date", ""), a.get("moving_time", 0)),
                 "max_hr": a.get("max_heartrate"),
                 "suffer_score": a.get("suffer_score"),
+                "hr_source": "strava" if a.get("average_heartrate") else ("whoop" if _find_whoop_hr(a.get("start_date", ""), a.get("moving_time", 0)) else None),
             }
             for a in activities
         ],

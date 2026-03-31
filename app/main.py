@@ -16,6 +16,7 @@ from app.routes.auth_routes import router as auth_router
 from app.routes.strava_routes import router as strava_router
 from app.routes.whoop_routes import router as whoop_router
 from app.routes.agent_routes import router as agent_router
+from app.routes.dashboard_routes import router as dashboard_router
 
 app = FastAPI(
     title="Fitness Agent",
@@ -36,6 +37,7 @@ app.include_router(auth_router)
 app.include_router(strava_router)
 app.include_router(whoop_router)
 app.include_router(agent_router)
+app.include_router(dashboard_router)
 
 # Serve static files
 STATIC_DIR = Path(__file__).parent / "static"
