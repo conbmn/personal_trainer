@@ -11,6 +11,7 @@ import json
 from datetime import datetime, timezone
 
 from app.clients import strava, whoop
+from app.metrics import compute_training_load, get_phase_label
 
 # ---------------------------------------------------------------------------
 # Athlete race config — hardcoded for now, could be a settings page later
@@ -77,6 +78,12 @@ async def gather_fitness_snapshot() -> dict:
     except Exception as e:
         snapshot["recovery_14d"] = {"error": str(e)}
 
+    # Training load metrics (CTL/ATL/TSB)
+    try:
+        snapshot["training_load"] = await compute_training_load()
+    except Exception as e:
+        snapshot["training_load"] = {"error": str(e)}
+
     return snapshot
 
 
@@ -86,6 +93,12 @@ def build_plan_prompt(snapshot: dict, plan_type: str = "full") -> str:
     """
     weeks_left = get_weeks_until_race()
 
+    load = snapshot.get("training_load", {})
+    ctl = load.get("ctl", "N/A")
+    atl = load.get("atl", "N/A")
+    tsb = load.get("tsb", "N/A")
+    phase = get_phase_label(weeks_left)
+
     prompt = f"""You are an experienced triathlon coach creating a training plan.
 
 ## RACE
@@ -93,12 +106,20 @@ def build_plan_prompt(snapshot: dict, plan_type: str = "full") -> str:
 - **Date:** {RACE_CONFIG['race_date']} ({weeks_left} weeks away)
 - **Distances:** {RACE_CONFIG['distances']['swim_km']}km swim, {RACE_CONFIG['distances']['bike_km']}km bike, {RACE_CONFIG['distances']['run_km']}km run
 - **Goal:** {RACE_CONFIG['goal']}
+- **Current phase:** {phase}
 
 ## ATHLETE CONTEXT
 {RACE_CONFIG['athlete_context']}
 
 ## TRAINING AVAILABILITY
 {chr(10).join('- ' + a for a in RACE_CONFIG['availability'])}
+
+## TRAINING LOAD METRICS
+- CTL (fitness): {ctl}
+- ATL (fatigue): {atl}
+- TSB (form): {tsb}
+- Phase: {phase}
+{('- Patterns: ' + '; '.join(load['patterns'])) if load.get('patterns') else ''}
 
 ## CURRENT FITNESS (from real Strava + Whoop data)
 {json.dumps(snapshot, indent=2, default=str)}

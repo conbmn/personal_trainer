@@ -13,26 +13,51 @@ from app.config import settings
 from app.clients import strava
 from app.clients import whoop
 from app.training_plan import gather_fitness_snapshot, build_plan_prompt, get_weeks_until_race, RACE_CONFIG
+from app.metrics import get_phase_label
+from app import metrics
 
 client = AsyncOpenAI(api_key=settings.openai_api_key)
 
-SYSTEM_PROMPT = f"""You are a knowledgeable cycling and triathlon coach assistant.
-You have access to the user's Strava training data AND Whoop recovery/sleep data.
-Use the available tools to pull real data before answering questions.
+SYSTEM_PROMPT = f"""You are an expert triathlon coach with deep knowledge of periodization, training physiology, and data-driven coaching.
 
-The athlete is training for {RACE_CONFIG['race_name']} on {RACE_CONFIG['race_date']} ({get_weeks_until_race()} weeks away).
-It's a 70.3: 1.9km swim, 90km bike, 21.1km run. Goal is to finish comfortably.
+## ATHLETE & RACE
+- Race: {RACE_CONFIG['race_name']} on {RACE_CONFIG['race_date']} ({get_weeks_until_race()} weeks away)
+- Format: 70.3 — 1.9km swim / 90km bike / 21.1km run. Goal: finish comfortably.
+- Context: {RACE_CONFIG['athlete_context']}
+- Current training phase: **{get_phase_label(get_weeks_until_race())}** ({get_weeks_until_race()} weeks out)
 
-Guidelines:
-- Always fetch data before making training recommendations — never guess.
-- For training questions, pull Strava data. For recovery/sleep/readiness, pull Whoop data.
-- For "should I train today?" questions, pull BOTH Strava and Whoop data.
-- Be specific: reference actual distances, times, heart rates, recovery scores, and HRV.
-- Use metric units (km, meters, bpm, ms for HRV).
-- Be concise but insightful — like a good coach talking to an athlete.
-- Whoop recovery zones: Red (<34) = take it easy, Yellow (34-66) = moderate OK, Green (67+) = go hard.
-- If you notice patterns (e.g., declining HRV, poor sleep streak, overtraining), flag them.
-- When asked about training plans, use the training plan tools to generate data-driven plans.
+## TOOL ROUTING — always fetch real data before responding
+- `get_training_load` → CTL/ATL/TSB and pattern alerts. Use for: fitness trends, fatigue, overtraining, "am I building?", trend questions.
+- `get_race_readiness` → 0-100 composite score. Use for: "am I on track?", "how prepared am I?", race countdown questions.
+- `get_training_summary(days)` → raw activity list. Use for: "what did I do this week?", specific sessions, volume by sport.
+- `get_recovery_summary(days)` → Whoop daily recovery, HRV, sleep. Use for: today's readiness, sleep quality, HRV questions.
+- `get_sleep_data` → detailed sleep stages. Use for: sleep-specific deep dives.
+- `generate_training_plan` → full/next_week/adjust plans. Use when the athlete asks for a structured plan.
+- For "should I train today?" → call BOTH `get_training_load` AND `get_recovery_summary`.
+- For any training recommendation → call at least one tool first. Never guess.
+
+## PERIODIZATION AWARENESS
+- Base (>16 weeks): Build aerobic volume, Zone 2 work, all three sports equally.
+- Build (9-16 weeks): Add intensity, introduce brick workouts (bike→run), sport-specific sessions.
+- Peak (4-8 weeks): Race-pace efforts, long brick sessions, reduce easy volume.
+- Taper (≤3 weeks): Drop volume 40%, keep 2-3 intensity sessions, trust the training.
+
+## PATTERN DETECTION — proactively flag these when you see them in data
+- HRV declining 3+ consecutive days → accumulated fatigue, recommend easy day or rest
+- TSB < -25 → heavy fatigue, performance suppressed, recovery priority
+- ATL > 1.5 × CTL → overreaching risk, recommend recovery week
+- 4+ of last 7 recovery scores < 50 → chronic under-recovery, investigate sleep/stress
+- TSB +5 to +20 near race (2-4 weeks out) → optimal freshness window, don't add load
+- RHR trending up 5+ bpm over 2 weeks → systemic fatigue signal
+
+## RESPONSE STYLE
+- Always cite actual numbers: CTL, TSB, HRV, distances, recovery scores.
+- Be direct: "Your TSB is -18, which means significant fatigue. I'd recommend..."
+- Flag patterns proactively even if the user didn't ask.
+- Use metric units (km, bpm, ms for HRV).
+- For responses longer than 3 sentences, use ## headers and bullet points for scannability.
+- Reference specific weeks remaining in every training plan or phase discussion.
+- Whoop recovery zones: Red (<34) = rest, Yellow (34-66) = moderate OK, Green (67+) = go hard.
 """
 
 # ---------------------------------------------------------------------------
@@ -167,6 +192,35 @@ TOOLS = [
             },
         },
     },
+    # --- Training load & readiness tools ---
+    {
+        "type": "function",
+        "function": {
+            "name": "get_training_load",
+            "description": (
+                "Compute CTL (chronic training load = fitness), ATL (acute training load = fatigue), "
+                "and TSB (training stress balance = form/freshness) from 90 days of Strava heart rate data. "
+                "Also returns pattern warnings (overreaching, HRV decline, under-recovery) and a "
+                "plain-language interpretation. Use for any question about fitness trends, fatigue levels, "
+                "peaking, overtraining, or 'should I build or rest?'. More insightful than raw summary for trends."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_race_readiness",
+            "description": (
+                "Compute a 0-100 race readiness score combining fitness (CTL), form (TSB), "
+                "7-day Whoop recovery trend, and weeks to race. Returns total score, component breakdown, "
+                "a status label (Race Ready / Building Well / Developing / Early Stage), and interpretation. "
+                "Use when the athlete asks how prepared they are, whether they're on track, or for a "
+                "race countdown assessment."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
     # --- Training plan tools ---
     {
         "type": "function",
@@ -223,6 +277,11 @@ async def execute_tool(name: str, arguments: dict) -> str:
             result = await whoop.get_sleep(days=arguments.get("days", 7))
         elif name == "get_whoop_workouts":
             result = await whoop.get_workouts(days=arguments.get("days", 7))
+        # Training load & readiness tools
+        elif name == "get_training_load":
+            result = await metrics.compute_training_load()
+        elif name == "get_race_readiness":
+            result = await metrics.compute_race_readiness()
         # Training plan tools
         elif name == "generate_training_plan":
             plan_type = arguments.get("plan_type", "full")
