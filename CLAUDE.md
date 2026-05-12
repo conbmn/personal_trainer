@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI-powered personal triathlon coaching agent integrating Strava (training data) and Whoop (recovery data) with OpenAI function calling. Built for Ironman 70.3 race preparation, training load balancing, and recovery-informed scheduling. Includes a dashboard view with live CTL/ATL/TSB metrics, race readiness score, and 30-day Whoop trends.
+AI-powered personal triathlon coaching agent integrating Strava (training data), Whoop (recovery data), and blood test lab results with OpenAI function calling. Built for Ironman 70.3 race preparation, training load balancing, and recovery-informed scheduling. Features a dashboard with live CTL/ATL/TSB metrics, race readiness score, 30-day Whoop trends, and a Labs page for blood biomarker visualization with PDF ingestion.
 
 ## Running the Project
 
@@ -29,20 +29,23 @@ cp .env.example .env  # then fill in credentials
 
 ```
 FastAPI (app/main.py)
-├── app/routes/             — HTTP endpoints
-│   ├── auth_routes.py      — OAuth callbacks for Strava and Whoop
-│   ├── strava_routes.py    — Strava data endpoints
-│   ├── whoop_routes.py     — Whoop data endpoints
-│   ├── agent_routes.py     — Chat agent endpoint
-│   └── dashboard_routes.py — GET /api/dashboard (fan-out: Strava + Whoop + metrics)
-├── app/clients/            — Async httpx API clients (strava.py, whoop.py)
-├── app/agent.py            — OpenAI agent loop with 11 function-calling tools
-├── app/metrics.py          — CTL/ATL/TSB training load computation + race readiness score
-├── app/auth.py             — OAuth 2.0 service for Strava and Whoop
-├── app/token_store.py      — JSON-based token persistence (token_store.json)
-├── app/training_plan.py    — Ironman 70.3 periodized plan generator
-├── app/config.py           — Pydantic Settings (reads .env)
-└── app/static/             — Chat + dashboard UI (index.html)
+├── app/routes/                  — HTTP endpoints
+│   ├── auth_routes.py           — OAuth callbacks for Strava and Whoop
+│   ├── strava_routes.py         — Strava data endpoints
+│   ├── whoop_routes.py          — Whoop data endpoints
+│   ├── agent_routes.py          — Chat agent endpoint
+│   ├── dashboard_routes.py      — GET /api/dashboard (fan-out: Strava + Whoop + metrics)
+│   └── blood_test_routes.py     — GET/POST /api/blood-tests (PDF sync + retrieval)
+├── app/clients/                 — Async httpx API clients (strava.py, whoop.py)
+├── app/agent.py                 — OpenAI agent loop with 11 function-calling tools
+├── app/metrics.py               — CTL/ATL/TSB training load computation + race readiness score
+├── app/blood_test_store.py      — PDF scan, GPT extraction, unit normalisation, JSON persistence
+├── app/blood_test_units.py      — Canonical unit conversion table (~40 biomarkers)
+├── app/auth.py                  — OAuth 2.0 service for Strava and Whoop
+├── app/token_store.py           — JSON-based token persistence (token_store.json)
+├── app/training_plan.py         — Ironman 70.3 periodized plan generator
+├── app/config.py                — Pydantic Settings (reads .env)
+└── app/static/                  — SPA: Dashboard + Labs + Coach chat (index.html)
 ```
 
 **Agent tools** (defined in `app/agent.py`): 4 Strava tools, 4 Whoop tools, 2 metrics tools (`get_training_load`, `get_race_readiness`), 1 training plan generator. The agent loop sends user message + conversation history → executes tool calls → feeds results back → returns final response.
@@ -53,6 +56,13 @@ FastAPI (app/main.py)
 - `get_phase_label(weeks)` — returns Base / Build / Peak / Taper
 
 **Dashboard** (`GET /api/dashboard`): fans out in parallel to Strava, Whoop, and metrics; returns today's recovery block, last 7 activities (merged Strava + Whoop-only), current-week volume by sport, race countdown + readiness, CTL/ATL/TSB, and 30-day Whoop trends.
+
+**Blood test Labs** (`app/blood_test_store.py` + `app/blood_test_units.py`):
+- Drop PDFs into `blood_tests/` folder (gitignored); any filename works — date, lab, country are extracted from PDF content by GPT-4o
+- `sync_new_pdfs()` — scans folder, skips already-parsed files (matched by filename), extracts text via `pdfplumber`, calls GPT for structured JSON, normalises units, appends to `blood_tests.json` (gitignored)
+- Unit normalisation: each biomarker has a `canonical_value`/`canonical_unit` (for cross-lab trend comparison) alongside the raw lab value. `in_range` computed from canonical values
+- Trend charts use canonical values; gauge display uses raw values vs raw ref bounds
+- `GET /api/blood-tests` auto-syncs on load; `POST /api/blood-tests/refresh` for explicit trigger
 
 **Token management**: Tokens stored in `token_store.json` (gitignored), auto-refreshed 5 minutes before expiry.
 
