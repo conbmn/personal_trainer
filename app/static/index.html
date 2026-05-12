@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Constantin's Training Hub</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         :root {
             --bg-void: #000000;
@@ -126,11 +127,14 @@
 
         .clear-btn:hover { color: var(--text-secondary); }
 
-        /* Mobile toggle buttons */
-        .mobile-toggle {
-            display: none;
+        /* View toggle buttons (dashboard / labs) — always visible */
+        .view-toggle {
+            display: flex;
             gap: 4px;
         }
+
+        /* Coach toggle — mobile only */
+        .mobile-only { display: none; }
 
         .toggle-btn {
             background: none;
@@ -165,16 +169,226 @@
             height: 100%;
         }
 
+        /* Left column — holds dashboard panel OR labs panel */
+        .left-col {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-right: 1px solid var(--border);
+        }
+
         /* ================================================================
            DASHBOARD PANEL
         ================================================================ */
         .dashboard-panel {
             display: flex;
             flex-direction: column;
-            overflow: hidden;
-            border-right: 1px solid var(--border);
+            flex: 1;
+            overflow-y: auto;
             background: var(--bg-void);
         }
+
+        .dashboard-panel::-webkit-scrollbar { width: 3px; }
+        .dashboard-panel::-webkit-scrollbar-track { background: transparent; }
+        .dashboard-panel::-webkit-scrollbar-thumb { background: var(--border-solid); border-radius: 2px; }
+
+        /* ================================================================
+           LABS PANEL
+        ================================================================ */
+        .labs-panel {
+            display: none;
+            flex-direction: column;
+            flex: 1;
+            overflow-y: auto;
+            background: var(--bg-void);
+        }
+        .labs-panel.active { display: flex; }
+        .labs-panel::-webkit-scrollbar { width: 3px; }
+        .labs-panel::-webkit-scrollbar-track { background: transparent; }
+        .labs-panel::-webkit-scrollbar-thumb { background: var(--border-solid); border-radius: 2px; }
+
+        .labs-header {
+            flex-shrink: 0;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--bg-secondary);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .labs-test-selector {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 20px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+
+        .test-chip {
+            padding: 3px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--border-solid);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .test-chip.active {
+            border-color: var(--accent);
+            color: var(--accent-soft);
+            background: var(--accent-glow);
+        }
+
+        .labs-summary-strip {
+            flex-shrink: 0;
+            padding: 6px 20px;
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .labs-markers-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+            flex-shrink: 0;
+        }
+
+        .marker-card {
+            background: var(--bg-void);
+            padding: 12px 16px;
+        }
+
+        .marker-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+            gap: 4px;
+        }
+
+        .marker-name {
+            font-size: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .marker-badge {
+            font-size: 9px;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 1px 5px;
+            border-radius: 3px;
+            flex-shrink: 0;
+        }
+        .marker-badge.in-range  { background: var(--green-dim);  color: var(--green);  }
+        .marker-badge.out-range { background: var(--red-dim);    color: var(--red);    }
+        .marker-badge.border-range { background: var(--yellow-dim); color: var(--yellow); }
+
+        .marker-value-row { margin-bottom: 7px; }
+
+        .marker-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .marker-unit {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-left: 3px;
+        }
+
+        .range-gauge-wrap {
+            position: relative;
+            height: 5px;
+            background: var(--bg-card);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 4px;
+        }
+
+        .range-gauge-band {
+            position: absolute;
+            top: 0; bottom: 0;
+            background: rgba(34, 197, 94, 0.22);
+        }
+
+        .range-gauge-needle {
+            position: absolute;
+            top: -1px; bottom: -1px;
+            width: 2px;
+            border-radius: 1px;
+            transform: translateX(-50%);
+        }
+
+        .range-ref-label {
+            font-size: 9px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--text-muted);
+        }
+
+        .labs-trends-section { border-top: 1px solid var(--border); }
+
+        .labs-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+        }
+
+        .labs-empty {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 40px 20px;
+            text-align: center;
+        }
+        .labs-empty-icon { font-size: 32px; opacity: 0.5; }
+        .labs-empty-title { font-size: 14px; font-weight: 600; color: var(--text-secondary); }
+        .labs-empty-desc {
+            font-size: 12px; color: var(--text-muted); line-height: 1.6;
+            max-width: 260px; font-family: 'JetBrains Mono', monospace;
+        }
+
+        .refresh-btn {
+            background: none;
+            border: 1px solid var(--border-solid);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 4px;
+            transition: color 0.15s ease;
+            letter-spacing: 0.02em;
+        }
+        .refresh-btn:hover { color: var(--text-secondary); }
+        .refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         /* Race bar */
         .race-bar {
@@ -350,20 +564,11 @@
         .activities-section {
             display: flex;
             flex-direction: column;
-            flex: 1;
-            overflow: hidden;
-            min-height: 0;
         }
 
         .activities-feed {
-            flex: 1;
-            overflow-y: auto;
             padding: 0 20px 8px;
         }
-
-        .activities-feed::-webkit-scrollbar { width: 3px; }
-        .activities-feed::-webkit-scrollbar-track { background: transparent; }
-        .activities-feed::-webkit-scrollbar-thumb { background: var(--border-solid); border-radius: 2px; }
 
         .activity-card {
             display: grid;
@@ -423,11 +628,10 @@
 
         /* Week summary */
         .week-summary {
-            flex-shrink: 0;
-            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
             background: var(--bg-secondary);
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
             padding: 10px 20px;
             gap: 0;
         }
@@ -464,6 +668,46 @@
         }
 
         .week-sport-val.dim { color: var(--text-muted); }
+
+        /* Whoop trend charts */
+        .whoop-trends-section {
+            border-top: 1px solid var(--border);
+        }
+
+        .whoop-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--border);
+        }
+
+        .whoop-chart-card {
+            background: var(--bg-void);
+            padding: 12px 16px;
+        }
+
+        .whoop-chart-title {
+            font-size: 9px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 2px;
+        }
+
+        .whoop-chart-value {
+            font-size: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .whoop-chart-canvas-wrap {
+            position: relative;
+            height: 80px;
+        }
 
         /* ================================================================
            SKELETON LOADERS
@@ -679,7 +923,7 @@
         .msg-content code {
             font-family: 'JetBrains Mono', monospace;
             font-size: 11px;
-            background: rgba(249, 115, 22, 0.08);
+            background: rgba(56, 189, 248, 0.08);
             padding: 1px 4px;
             border-radius: 3px;
             color: var(--accent-soft);
@@ -735,7 +979,7 @@
         }
 
         .input-wrapper:focus-within {
-            border-color: rgba(249, 115, 22, 0.4);
+            border-color: rgba(56, 189, 248, 0.4);
             box-shadow: 0 0 0 2px var(--accent-glow);
         }
 
@@ -797,10 +1041,10 @@
         ================================================================ */
         @media (max-width: 900px) {
             .app-body { grid-template-columns: 1fr; }
-            .dashboard-panel { display: none; }
-            .dashboard-panel.mobile-active { display: flex; }
+            .left-col { display: none; }
+            .left-col.mobile-active { display: flex; }
             .chat-panel.mobile-hidden { display: none; }
-            .mobile-toggle { display: flex; }
+            .mobile-only { display: inline-flex !important; }
         }
     </style>
 </head>
@@ -813,9 +1057,10 @@
             <div class="header-title">Constantin's Training Hub</div>
         </div>
         <div class="header-right">
-            <div class="mobile-toggle">
+            <div class="view-toggle">
                 <button class="toggle-btn active" id="toggleDash" onclick="showPanel('dashboard')">Dashboard</button>
-                <button class="toggle-btn" id="toggleChat" onclick="showPanel('chat')">Coach</button>
+                <button class="toggle-btn" id="toggleLabs" onclick="showPanel('labs')">Labs</button>
+                <button class="toggle-btn mobile-only" id="toggleChat" onclick="showPanel('chat')">Coach</button>
             </div>
             <button class="clear-btn" id="clearBtn" onclick="clearHistory()" style="display:none;">clear chat</button>
             <div class="status-badge" id="statusBadge">
@@ -828,6 +1073,9 @@
     <!-- App body -->
     <div class="app-body">
 
+        <!-- Left column: Dashboard or Labs -->
+        <div class="left-col" id="leftCol">
+
         <!-- Dashboard panel -->
         <div class="dashboard-panel" id="dashboardPanel">
             <div class="race-bar" id="raceBar">
@@ -835,29 +1083,6 @@
             </div>
             <div class="metrics-strip" id="metricsStrip">
                 <span class="skeleton sk-line" style="width:180px;"></span>
-            </div>
-
-            <div class="section-label">Today</div>
-            <div class="today-hero" id="todayHero">
-                <div class="skeleton sk-ring"></div>
-                <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;">
-                    <div style="display:flex;gap:6px;">
-                        <div class="skeleton sk-pill"></div>
-                        <div class="skeleton sk-pill"></div>
-                        <div class="skeleton sk-pill"></div>
-                    </div>
-                    <div class="skeleton sk-line" style="width:80%;"></div>
-                </div>
-            </div>
-
-            <div class="activities-section">
-                <div class="section-label">Recent Activities</div>
-                <div class="activities-feed" id="activitiesFeed">
-                    <div class="skeleton sk-activity"></div>
-                    <div class="skeleton sk-activity"></div>
-                    <div class="skeleton sk-activity"></div>
-                    <div class="skeleton sk-activity"></div>
-                </div>
             </div>
 
             <div class="week-summary" id="weekSummary">
@@ -883,7 +1108,46 @@
                     </div>
                 </div>
             </div>
+
+            <div class="section-label">Today</div>
+            <div class="today-hero" id="todayHero">
+                <div class="skeleton sk-ring"></div>
+                <div style="display:flex;flex-direction:column;gap:8px;padding-top:4px;">
+                    <div style="display:flex;gap:6px;">
+                        <div class="skeleton sk-pill"></div>
+                        <div class="skeleton sk-pill"></div>
+                        <div class="skeleton sk-pill"></div>
+                    </div>
+                    <div class="skeleton sk-line" style="width:80%;"></div>
+                </div>
+            </div>
+
+            <div class="activities-section">
+                <div class="section-label">Recent Activities</div>
+                <div class="activities-feed" id="activitiesFeed">
+                    <div class="skeleton sk-activity"></div>
+                    <div class="skeleton sk-activity"></div>
+                    <div class="skeleton sk-activity"></div>
+                    <div class="skeleton sk-activity"></div>
+                </div>
+            </div>
+
+            <div class="whoop-trends-section">
+                <div class="section-label">Whoop Trends · 30 days</div>
+                <div class="whoop-charts-grid" id="whoopTrends">
+                    <div class="whoop-chart-card"><div class="skeleton sk-line" style="width:60px;margin-bottom:8px;"></div><div class="whoop-chart-canvas-wrap skeleton"></div></div>
+                    <div class="whoop-chart-card"><div class="skeleton sk-line" style="width:60px;margin-bottom:8px;"></div><div class="whoop-chart-canvas-wrap skeleton"></div></div>
+                    <div class="whoop-chart-card"><div class="skeleton sk-line" style="width:60px;margin-bottom:8px;"></div><div class="whoop-chart-canvas-wrap skeleton"></div></div>
+                    <div class="whoop-chart-card"><div class="skeleton sk-line" style="width:60px;margin-bottom:8px;"></div><div class="whoop-chart-canvas-wrap skeleton"></div></div>
+                </div>
+            </div>
+
         </div>
+
+        <!-- Labs panel (content rendered by JS) -->
+        <div class="labs-panel" id="labsPanel"></div>
+
+        </div><!-- end .left-col -->
 
         <!-- Chat panel -->
         <div class="chat-panel">
@@ -969,22 +1233,38 @@
             location.reload();
         }
 
-        // ── Mobile panel toggle ──────────────────────────────────────────
+        // ── Panel navigation ─────────────────────────────────────────────
         function showPanel(which) {
-            const dash = document.getElementById('dashboardPanel');
+            const leftCol = document.getElementById('leftCol');
             const chat = document.querySelector('.chat-panel');
+            const dash = document.getElementById('dashboardPanel');
+            const labs = document.getElementById('labsPanel');
             const btnDash = document.getElementById('toggleDash');
             const btnChat = document.getElementById('toggleChat');
-            if (which === 'dashboard') {
-                dash.classList.add('mobile-active');
-                chat.classList.add('mobile-hidden');
-                btnDash.classList.add('active');
-                btnChat.classList.remove('active');
-            } else {
-                dash.classList.remove('mobile-active');
+            const btnLabs = document.getElementById('toggleLabs');
+
+            [btnDash, btnLabs, btnChat].forEach(b => b && b.classList.remove('active'));
+
+            if (which === 'chat') {
+                leftCol.classList.remove('mobile-active');
                 chat.classList.remove('mobile-hidden');
-                btnChat.classList.add('active');
-                btnDash.classList.remove('active');
+                btnChat && btnChat.classList.add('active');
+                return;
+            }
+
+            // Non-chat: show left column on mobile, hide chat
+            leftCol.classList.add('mobile-active');
+            chat.classList.add('mobile-hidden');
+
+            if (which === 'dashboard') {
+                dash.style.display = '';
+                labs.classList.remove('active');
+                btnDash && btnDash.classList.add('active');
+            } else if (which === 'labs') {
+                dash.style.display = 'none';
+                labs.classList.add('active');
+                btnLabs && btnLabs.classList.add('active');
+                if (!_labsLoaded) loadLabs();
             }
         }
 
@@ -996,9 +1276,10 @@
                 const data = await res.json();
                 renderRaceBar(data.race);
                 renderMetricsStrip(data.metrics);
+                renderWeekSummary(data.week_volume);
                 renderTodayHero(data.today, data.last_activity);
                 renderActivitiesFeed(data.recent_activities);
-                renderWeekSummary(data.week_volume);
+                renderWhoopTrends(data.whoop_trends);
             } catch (err) {
                 document.getElementById('raceBar').innerHTML =
                     '<span style="color:var(--text-muted);font-size:11px;">dashboard unavailable</span>';
@@ -1121,11 +1402,13 @@
                 const hrHtml = a.avg_hr
                     ? `<span class="hr-val"> ·\u202F♥${Math.round(a.avg_hr)}</span>`
                     : '';
+                const sourceBadge = a.source === 'whoop'
+                    ? `<span class="hr-source-badge" title="Recorded on Whoop only">W</span>` : '';
                 return `
                     <div class="activity-card">
                         <div class="activity-icon">${icon}</div>
                         <div class="activity-main">
-                            <div class="activity-name">${escapeHtml(a.name)}</div>
+                            <div class="activity-name">${escapeHtml(a.name)}${sourceBadge}</div>
                             <div class="activity-date">${dateStr}</div>
                         </div>
                         <div class="activity-stats">${stats}${hrHtml}</div>
@@ -1142,9 +1425,25 @@
                 const parts = [km ? `${km}km` : null, min ? `${min}m` : null].filter(Boolean);
                 return { val: parts.join('\u202F·\u202F'), dim: false };
             };
+            const fmtMins = (min) => {
+                if (!min) return '';
+                const h = Math.floor(min / 60), m = min % 60;
+                return h > 0 ? `${h}h${m > 0 ? `\u202F${m}m` : ''}` : `${m}m`;
+            };
             const swim = fmt(vol.swim_km, vol.swim_min);
             const bike = fmt(vol.bike_km, vol.bike_min);
             const run = fmt(vol.run_km, vol.run_min);
+            const otherCount = vol.other_count || 0;
+            const otherMin = vol.other_min || 0;
+            const otherCol = otherCount > 0 ? `
+                <div class="week-sport">
+                    <div class="week-sport-icon">💪</div>
+                    <div class="week-sport-data">
+                        <div class="week-sport-label">Other</div>
+                        <div class="week-sport-val">${otherCount}×</div>
+                        ${otherMin ? `<div class="week-sport-val dim" style="font-size:10px;">${fmtMins(otherMin)}</div>` : ''}
+                    </div>
+                </div>` : '';
             el.innerHTML = `
                 <div class="week-sport">
                     <div class="week-sport-icon">🏊</div>
@@ -1167,7 +1466,107 @@
                         <div class="week-sport-val ${run.dim ? 'dim' : ''}">${run.val}</div>
                     </div>
                 </div>
+                ${otherCol}
             `;
+        }
+
+        let _whoopCharts = [];
+
+        function renderWhoopTrends(trends) {
+            const el = document.getElementById('whoopTrends');
+            if (!el) return;
+
+            // Destroy any previously created Chart instances to avoid canvas reuse errors
+            _whoopCharts.forEach(c => c.destroy());
+            _whoopCharts = [];
+
+            if (!trends || trends.length < 3) {
+                el.innerHTML = '<div style="padding:16px 20px;font-size:12px;color:var(--text-muted);font-family:\'JetBrains Mono\',monospace;">Not enough Whoop data</div>';
+                return;
+            }
+
+            const labels = trends.map(d => d.date);
+            const chartDefs = [
+                { key: 'recovery',  label: 'Recovery',  unit: '%',  color: '#38bdf8', fill: 'rgba(56,189,248,0.08)' },
+                { key: 'hrv',       label: 'HRV',       unit: 'ms', color: '#22c55e', fill: 'rgba(34,197,94,0.08)'  },
+                { key: 'rhr',       label: 'RHR',       unit: 'bpm',color: '#ef4444', fill: 'rgba(239,68,68,0.08)'  },
+                { key: 'sleep_hrs', label: 'Sleep',     unit: 'h',  color: '#a78bfa', fill: 'rgba(167,139,250,0.08)'},
+            ];
+
+            el.innerHTML = chartDefs.map((def, i) => `
+                <div class="whoop-chart-card">
+                    <div class="whoop-chart-title">${def.label}</div>
+                    <div class="whoop-chart-value" id="whoopVal${i}">—</div>
+                    <div class="whoop-chart-canvas-wrap">
+                        <canvas id="whoopCanvas${i}"></canvas>
+                    </div>
+                </div>
+            `).join('');
+
+            chartDefs.forEach((def, i) => {
+                const vals = trends.map(d => d[def.key]);
+                const nonNull = vals.filter(v => v != null);
+                if (nonNull.length < 3) return;
+
+                const latest = nonNull[nonNull.length - 1];
+                document.getElementById(`whoopVal${i}`).textContent = `${latest}${def.unit}`;
+
+                const ctx = document.getElementById(`whoopCanvas${i}`).getContext('2d');
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            data: vals,
+                            borderColor: def.color,
+                            backgroundColor: def.fill,
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            pointHoverRadius: 3,
+                            pointHoverBackgroundColor: def.color,
+                            spanGaps: true,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#111113',
+                                borderColor: 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                titleColor: '#52525b',
+                                bodyColor: '#f4f4f6',
+                                titleFont: { family: 'JetBrains Mono', size: 9 },
+                                bodyFont: { family: 'JetBrains Mono', size: 11 },
+                                callbacks: {
+                                    title: ctx => ctx[0].label,
+                                    label: ctx => `${ctx.parsed.y}${def.unit}`,
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: {
+                                display: true,
+                                grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                                ticks: {
+                                    color: '#52525b',
+                                    font: { family: 'JetBrains Mono', size: 9 },
+                                    maxTicksLimit: 3,
+                                    padding: 4,
+                                },
+                                border: { display: false },
+                            }
+                        }
+                    }
+                });
+                _whoopCharts.push(chart);
+            });
         }
 
         function formatDate(dateStr) {
@@ -1302,6 +1701,320 @@
                     badge.style.cssText += ';border-color:rgba(239,68,68,0.15);background:rgba(239,68,68,0.08);color:var(--red)';
                 }
             } catch (e) {}
+        }
+
+        // ── Labs ─────────────────────────────────────────────────────────
+        let _labsLoaded = false;
+        let _labsTests = [];
+        let _activeTestIdx = 0;
+        let _labsCharts = [];
+
+        async function loadLabs() {
+            const panel = document.getElementById('labsPanel');
+            panel.innerHTML = `
+                <div class="labs-header"><span>Blood Tests</span></div>
+                <div style="padding:20px;font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">Loading…</div>`;
+            try {
+                const res = await fetch(`${API_BASE}/api/blood-tests`);
+                if (!res.ok) throw new Error(res.status);
+                const data = await res.json();
+                _labsTests = data.tests || [];
+                _labsLoaded = true;
+                renderLabs();
+            } catch (err) {
+                panel.innerHTML = `
+                    <div class="labs-header"><span>Blood Tests</span>
+                        <button class="refresh-btn" onclick="refreshLabs()">↻ Retry</button>
+                    </div>
+                    <div class="labs-empty">
+                        <div class="labs-empty-icon">⚗️</div>
+                        <div class="labs-empty-title">Could not load labs</div>
+                        <div class="labs-empty-desc">${escapeHtml(String(err))}</div>
+                    </div>`;
+            }
+        }
+
+        async function refreshLabs() {
+            const btn = document.getElementById('labsRefreshBtn');
+            if (btn) { btn.disabled = true; btn.textContent = '…'; }
+            try {
+                await fetch(`${API_BASE}/api/blood-tests/refresh`, { method: 'POST' });
+                _labsLoaded = false;
+                await loadLabs();
+            } catch (err) {
+                if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
+            }
+        }
+
+        function selectTest(idx) {
+            _activeTestIdx = idx;
+            renderLabs();
+        }
+
+        function renderLabs() {
+            const panel = document.getElementById('labsPanel');
+            if (!panel) return;
+
+            if (!_labsTests || _labsTests.length === 0) {
+                panel.innerHTML = `
+                    <div class="labs-header">
+                        <span>Blood Tests</span>
+                        <button class="refresh-btn" id="labsRefreshBtn" onclick="refreshLabs()">↻ Refresh</button>
+                    </div>
+                    <div class="labs-empty">
+                        <div class="labs-empty-icon">⚗️</div>
+                        <div class="labs-empty-title">No tests yet</div>
+                        <div class="labs-empty-desc">Drop PDF lab reports into the <code>blood_tests/</code> folder, then click Refresh.</div>
+                    </div>`;
+                return;
+            }
+
+            if (_activeTestIdx >= _labsTests.length) _activeTestIdx = 0;
+            const test = _labsTests[_activeTestIdx];
+            const markers = test.biomarkers || [];
+            const inRangeCount = markers.filter(m => m.in_range === true).length;
+            const hasRef = markers.filter(m => m.in_range !== null && m.in_range !== undefined).length;
+
+            const selectorHtml = _labsTests.length > 1 ? `
+                <div class="labs-test-selector">
+                    ${_labsTests.map((t, i) => `
+                        <button class="test-chip ${i === _activeTestIdx ? 'active' : ''}" onclick="selectTest(${i})">
+                            ${escapeHtml(t.lab || 'Lab')} · ${t.date}
+                        </button>`).join('')}
+                </div>` : '';
+
+            const summaryHtml = `
+                <div class="labs-summary-strip">
+                    ${hasRef > 0 ? `
+                        <span style="color:var(--green)">${inRangeCount}</span>
+                        <span style="color:var(--text-muted)">/</span>
+                        <span style="color:var(--text-secondary)">${hasRef}</span>
+                        <span style="color:var(--text-muted)">in range</span>
+                        <span style="color:var(--text-muted);margin:0 6px">·</span>` : ''}
+                    <span style="color:var(--text-muted)">${escapeHtml(test.lab || '')}${test.country ? ' (' + escapeHtml(test.country) + ')' : ''}</span>
+                    <span style="color:var(--text-muted);margin:0 6px">·</span>
+                    <span style="color:var(--text-muted)">${test.date || ''}</span>
+                </div>`;
+
+            const markersHtml = markers.length > 0
+                ? `<div class="labs-markers-grid">${markers.map(m => markerCardHtml(m)).join('')}</div>`
+                : '<div style="padding:16px 20px;font-size:12px;color:var(--text-muted);font-family:\'JetBrains Mono\',monospace;">No markers found.</div>';
+
+            const trendsHtml = _labsTests.length >= 2
+                ? `<div class="labs-trends-section">
+                       <div class="section-label">Trends · ${_labsTests.length} tests</div>
+                       <div class="labs-charts-grid" id="labsChartsGrid"></div>
+                   </div>` : '';
+
+            panel.innerHTML = `
+                <div class="labs-header">
+                    <span>Blood Tests</span>
+                    <button class="refresh-btn" id="labsRefreshBtn" onclick="refreshLabs()">↻ Refresh</button>
+                </div>
+                ${selectorHtml}
+                ${summaryHtml}
+                ${markersHtml}
+                ${trendsHtml}`;
+
+            if (_labsTests.length >= 2) renderLabsTrends();
+        }
+
+        function markerCardHtml(m) {
+            const displayVal = m.canonical_value ?? m.value;
+            const displayUnit = m.canonical_unit ?? m.unit;
+            const fmtVal = typeof displayVal === 'number'
+                ? (displayVal % 1 === 0 ? displayVal : displayVal.toFixed(2))
+                : '—';
+            const valColor = _markerColor(m);
+
+            let badgeHtml = '';
+            if (m.in_range === true) {
+                badgeHtml = '<span class="marker-badge in-range">OK</span>';
+            } else if (m.in_range === false) {
+                badgeHtml = _isBorderline(m)
+                    ? '<span class="marker-badge border-range">~</span>'
+                    : '<span class="marker-badge out-range">!</span>';
+            }
+
+            const refLabel = m.ref_low != null && m.ref_high != null
+                ? `${m.ref_low}–${m.ref_high} ${m.unit}`
+                : m.ref_high != null ? `< ${m.ref_high} ${m.unit}`
+                : m.ref_low  != null ? `> ${m.ref_low} ${m.unit}` : '';
+
+            return `
+                <div class="marker-card">
+                    <div class="marker-header">
+                        <span class="marker-name" title="${escapeHtml(m.display_name)}">${escapeHtml(m.display_name)}</span>
+                        ${badgeHtml}
+                    </div>
+                    <div class="marker-value-row">
+                        <span class="marker-value" style="color:${valColor}">${fmtVal}</span>
+                        <span class="marker-unit">${escapeHtml(displayUnit)}</span>
+                    </div>
+                    ${buildGaugeHtml(m)}
+                    ${refLabel ? `<div class="range-ref-label">ref ${escapeHtml(refLabel)}</div>` : ''}
+                </div>`;
+        }
+
+        function _markerColor(m) {
+            if (m.in_range === true) return 'var(--text-primary)';
+            if (m.in_range === false) return _isBorderline(m) ? 'var(--yellow)' : 'var(--red)';
+            return 'var(--text-primary)';
+        }
+
+        function _isBorderline(m) {
+            if (m.in_range !== false || m.value == null) return false;
+            const v = m.value;
+            if (m.ref_low  != null && v < m.ref_low)  return v >= m.ref_low  * 0.9;
+            if (m.ref_high != null && v > m.ref_high) return v <= m.ref_high * 1.1;
+            return false;
+        }
+
+        function buildGaugeHtml(m) {
+            const v = m.value;
+            const lo = m.ref_low;
+            const hi = m.ref_high;
+            if (v == null || (lo == null && hi == null)) return '';
+
+            const knownLo = lo ?? v;
+            const knownHi = hi ?? v;
+            const spread = Math.max(Math.abs(knownHi - knownLo), Math.abs(v) * 0.05, 1);
+            const dispMin = Math.min(knownLo, v) - spread * 0.25;
+            const dispMax = Math.max(knownHi, v) + spread * 0.25;
+            const dispRange = dispMax - dispMin;
+
+            const pct = x => Math.max(0, Math.min(100, ((x - dispMin) / dispRange) * 100)).toFixed(2);
+
+            const needleColor = m.in_range === true ? 'var(--green)'
+                : m.in_range === false ? (_isBorderline(m) ? 'var(--yellow)' : 'var(--red)')
+                : 'var(--text-secondary)';
+
+            let bandHtml = '';
+            if (lo != null && hi != null) {
+                const bLeft = pct(lo);
+                const bWidth = (pct(hi) - bLeft).toFixed(2);
+                bandHtml = `<div class="range-gauge-band" style="left:${bLeft}%;width:${bWidth}%;"></div>`;
+            } else if (hi != null) {
+                bandHtml = `<div class="range-gauge-band" style="left:0;width:${pct(hi)}%;"></div>`;
+            } else if (lo != null) {
+                bandHtml = `<div class="range-gauge-band" style="left:${pct(lo)}%;right:0;"></div>`;
+            }
+
+            return `
+                <div class="range-gauge-wrap">
+                    ${bandHtml}
+                    <div class="range-gauge-needle" style="left:${pct(v)}%;background:${needleColor};"></div>
+                </div>`;
+        }
+
+        function renderLabsTrends() {
+            const grid = document.getElementById('labsChartsGrid');
+            if (!grid) return;
+
+            _labsCharts.forEach(c => c.destroy());
+            _labsCharts = [];
+
+            // Collect markers that appear in ≥ 2 tests
+            const markerMap = {};
+            for (const test of _labsTests) {
+                for (const bm of (test.biomarkers || [])) {
+                    const key = bm.canonical_name;
+                    if (!markerMap[key]) markerMap[key] = [];
+                    markerMap[key].push({
+                        date: test.date,
+                        value: bm.canonical_value ?? bm.value,
+                        unit: bm.canonical_unit ?? bm.unit,
+                        ref_low: bm.ref_low,
+                        ref_high: bm.ref_high,
+                    });
+                }
+            }
+
+            const trendMarkers = Object.entries(markerMap)
+                .filter(([, pts]) => pts.length >= 2)
+                .map(([key, pts]) => ({ key, pts: pts.sort((a, b) => a.date.localeCompare(b.date)) }));
+
+            if (trendMarkers.length === 0) {
+                grid.innerHTML = '<div style="padding:16px 20px;font-size:12px;color:var(--text-muted);font-family:\'JetBrains Mono\',monospace;grid-column:1/-1;">No shared markers across tests yet.</div>';
+                return;
+            }
+
+            const COLORS = ['#38bdf8', '#22c55e', '#a78bfa', '#eab308', '#f472b6', '#fb923c'];
+
+            grid.innerHTML = trendMarkers.map((m, i) => `
+                <div class="whoop-chart-card">
+                    <div class="whoop-chart-title">${escapeHtml(m.key.replace(/_/g, ' '))}</div>
+                    <div class="whoop-chart-value" id="labsChartVal${i}">—</div>
+                    <div class="whoop-chart-canvas-wrap"><canvas id="labsCanvas${i}"></canvas></div>
+                </div>`).join('');
+
+            trendMarkers.forEach((m, i) => {
+                const color = COLORS[i % COLORS.length];
+                const latest = m.pts[m.pts.length - 1];
+                const unit = latest.unit || '';
+                const latestVal = typeof latest.value === 'number'
+                    ? (latest.value % 1 === 0 ? latest.value : latest.value.toFixed(2)) : '—';
+                document.getElementById(`labsChartVal${i}`).textContent = `${latestVal} ${unit}`;
+
+                const labels = m.pts.map(p => p.date);
+                const values = m.pts.map(p => p.value);
+
+                const datasets = [{
+                    data: values,
+                    borderColor: color,
+                    backgroundColor: 'transparent',
+                    fill: false,
+                    tension: 0.3,
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointBackgroundColor: color,
+                    spanGaps: true,
+                }];
+
+                // Dashed reference lines
+                const refLows  = m.pts.map(p => p.ref_low).filter(v => v != null);
+                const refHighs = m.pts.map(p => p.ref_high).filter(v => v != null);
+                if (refLows.length)  datasets.push({ data: labels.map(() => refLows.reduce((a,b)=>a+b,0)/refLows.length),   borderColor: 'rgba(34,197,94,0.3)', borderDash: [4,4], borderWidth: 1, pointRadius: 0, fill: false });
+                if (refHighs.length) datasets.push({ data: labels.map(() => refHighs.reduce((a,b)=>a+b,0)/refHighs.length), borderColor: 'rgba(34,197,94,0.3)', borderDash: [4,4], borderWidth: 1, pointRadius: 0, fill: false });
+
+                const ctx = document.getElementById(`labsCanvas${i}`).getContext('2d');
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#111113',
+                                borderColor: 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                titleColor: '#52525b',
+                                bodyColor: '#f4f4f6',
+                                titleFont: { family: 'JetBrains Mono', size: 9 },
+                                bodyFont: { family: 'JetBrains Mono', size: 11 },
+                                filter: item => item.datasetIndex === 0,
+                                callbacks: {
+                                    title: ctx => ctx[0].label,
+                                    label: ctx => `${ctx.parsed.y} ${unit}`,
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { display: false },
+                            y: {
+                                display: true,
+                                grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false },
+                                ticks: { color: '#52525b', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 3, padding: 4 },
+                                border: { display: false },
+                            }
+                        }
+                    }
+                });
+                _labsCharts.push(chart);
+            });
         }
 
         // ── Init ─────────────────────────────────────────────────────────

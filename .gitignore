@@ -208,5 +208,7 @@ __marimo__/
 .DS_Store
 app/.DS_Store
 token_store.json
+blood_tests.json
+blood_tests/
 files.zip
 files/

@@ -318,7 +318,7 @@ async def run_agent(user_message: str, conversation_history: list | None = None)
 
     while True:
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-5.4",
             messages=messages,
             tools=TOOLS,
         )
